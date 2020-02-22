@@ -1,0 +1,18 @@
+# vi swap files
+.*.swp
+
+# Logs & cache
+*.cache
+*.log
+
+# IDE stuff
+.idea/
+.vscode/
+
+# Mac
+.DS_Store
+
+vendor/
+dist/
+reports/
+tmp/
