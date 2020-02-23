@@ -59,7 +59,12 @@ type Worker struct {
 	chFlush   []chan interface{} // One channel per go routine to notify each routine to flush its batch objects
 }
 
-// New starts a *Worker object
+// New starts a *Worker object.
+//
+// See worker.Options for a list of options.
+// Defaults:
+// - Workers = 1
+// - ChanSize = 1
 func New(o *Options) *Worker {
 	var (
 		batchsize uint
@@ -70,6 +75,12 @@ func New(o *Options) *Worker {
 		batchsize = o.BatchSize
 		workers = o.Workers
 		chanlen = o.ChanSize
+	}
+	if chanlen < 1 {
+		chanlen = 1
+	}
+	if workers < 1 {
+		workers = 1
 	}
 	w := &Worker{
 		putMu:     &sync.Mutex{},
@@ -87,7 +98,7 @@ func New(o *Options) *Worker {
 	return w
 }
 
-// Start starts Go routines.
+// Start starts the worker pool.
 // Functions must follow the same signature as WorkerFunc or WorkerBatchFunc as the callback.
 func (w *Worker) Start(fn interface{}) error {
 	f, err := assertFunc(fn)
@@ -95,9 +106,6 @@ func (w *Worker) Start(fn interface{}) error {
 		return err
 	}
 	wrks := uint(1)
-	if w.wrks > wrks {
-		wrks = w.wrks
-	}
 	for i := uint(0); i < wrks; i++ {
 		flush := make(chan interface{}, 2)
 		w.chFlush = append(w.chFlush, flush)
