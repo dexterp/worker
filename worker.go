@@ -62,9 +62,7 @@ type Worker struct {
 // New starts a *Worker object.
 //
 // See worker.Options for a list of options.
-// Defaults:
-// - Workers = 1
-// - ChanSize = 1
+// Defaults: Workers = 1, ChanSize = 1
 func New(o *Options) *Worker {
 	var (
 		batchsize uint
