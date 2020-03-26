@@ -2,6 +2,7 @@ package worker
 
 import "fmt"
 
+// Error worker error
 type Error struct {
 	worker string
 	error

@@ -150,11 +150,15 @@ _test_setup:
 
 _release:
 	@echo "### Releasing $(VERSION)"
+	git tag v$(VERSION)
+	git push 
 
 REPORTS = reports/html/coverage.html
 .PHONY: $(REPORTS)
 $(REPORTS):
-	@test -f $@ && open $@
+	@test -f $@ && \
+	which open 2> /dev/null && open $@ || \
+	which xdg-open && xdg-open $@
 
 # Check versionbump
 _isreleased:
