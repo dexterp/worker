@@ -167,8 +167,7 @@ func (w *Worker) Start(fn interface{}) error {
 		return err
 	}
 
-	wrks := uint(1)
-	for i := uint(0); i < wrks; i++ {
+	for i := uint(0); i < w.wrks; i++ {
 		flush := make(chan interface{}, 2)
 		w.chFlush = append(w.chFlush, flush)
 		go start(w, flush, f)
