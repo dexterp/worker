@@ -11,6 +11,7 @@ ISRELEASED := $(shell git show-ref v$(VERSION) 2>&1 > /dev/null && echo "true")
 DOTENV := $(shell $(test -f $(HOME)/.env && echo "godotenv -f $(HOME)/.env,.env" || echo "godotenv -f .env"))
 
 # Go
+GOPATH := $(shell go env GOPATH)
 GOFILES := $(shell find . -name '*.go' 2> /dev/null | grep -v vendor)
 
 .PHONY: browse bumpmajor bumpminor bumppatch cattest clean tools _isreleased release _release test _test _test_setup
@@ -28,7 +29,10 @@ release: _isreleased
 	@$(DOTENV) make _release
 
 tools:
-	@make $(GOINSTALL)
+	@$(MAKE) $(GOPATH)/bin/go-junit-report $(GOPATH)/bin/golangci-lint $(GOPATH)/bin/golangci-lint $(GOPATH)/bin/go-test-html $(GOPATH)/bin/gocyclo $(GOPATH)/bin/godotenv $(GOPATH)/bin/versionbump
+
+forcetools:
+	@$(MAKE) --always-make tools
 
 bumpmajor:
 	git fetch --tags
@@ -56,13 +60,6 @@ cattest:
 #
 # Helper targets
 #
-GOINSTALL := github.com/jstemmer/go-junit-report github.com/golangci/golangci-lint/cmd/golangci-lint \
-		  github.com/ains/go-test-html github.com/fzipp/gocyclo/cmd/gocyclo github.com/joho/godotenv/cmd/godotenv \
-		  github.com/crosseyed/versionbump/cmd/versionbump
-.PHONY: $(GOINSTALL)
-$(GOINSTALL):
-	go install $@@latest
-
 _test: _test_setup
 	### Unit Tests
 	@(go test -race -timeout 5s -covermode atomic -coverprofile=./reports/coverage.out -v ./...; echo $$? > reports/exitcode.txt) 2>&1 | tee reports/test.txt
@@ -97,3 +94,24 @@ ifeq ($(ISRELEASED),true)
 	@echo "Please bump with 'make bump(minor|patch|major)' depending on breaking changes."
 	@exit 1
 endif
+
+#
+# File targets
+#
+$(GOPATH)/bin/go-junit-report:
+	@go install github.com/jstemmer/go-junit-report@latest
+
+$(GOPATH)/bin/golangci-lint:
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+$(GOPATH)/bin/go-test-html:
+	@go install github.com/ains/go-test-html@latest
+
+$(GOPATH)/bin/gocyclo:
+	@go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+
+$(GOPATH)/bin/godotenv:
+	@go install github.com/joho/godotenv/cmd/godotenv@latest
+
+$(GOPATH)/bin/versionbump:
+	@go install github.com/crosseyed/versionbump/cmd/versionbump@latest
