@@ -18,7 +18,7 @@ workerFunc := func(value int){
 }
 
 // Start pool.
-w, err := worker.Start(workerFunc, worker.Options{
+w, err := worker.Start[int](workerFunc, worker.Options{
     Workers: 6,
 })
 
@@ -44,7 +44,7 @@ workerFunc := func(batch []int){
 }
 
 // Start pool.
-w, err := worker.Start(workerFunc, worker.Options{
+w, err := worker.Start[int](workerFunc, worker.Options{
     Workers: 3,
     BatchSize: 24,
 })
