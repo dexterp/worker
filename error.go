@@ -4,10 +4,9 @@ import "fmt"
 
 // Error worker error
 type Error struct {
-	worker string
-	error
+	msg string
 }
 
 func (e *Error) Error() string {
-	return fmt.Sprintf("worker: %s", e.worker)
+	return fmt.Sprintf("worker: %s", e.msg)
 }

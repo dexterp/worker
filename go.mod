@@ -1,3 +1,3 @@
-module github.com/crosseyed/worker
+module github.com/dexterp/worker
 
-go 1.13
+go 1.20

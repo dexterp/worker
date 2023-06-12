@@ -1,3 +1,5 @@
+[![Github Actions](https://github.com/dexterp/worker/workflows/Go/badge.svg?branch=master)](https://github.com/dexterp/worker/actions) [![Go Report Card](https://goreportcard.com/badge/dexterp/worker)](https://goreportcard.com/report/dexterp/worker)  [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/dexterp/worker/blob/master/LICENSE)
+
 # Simple worker pool
 
 Worker provides a simple worker pool to manage go routines
@@ -6,65 +8,56 @@ Worker provides a simple worker pool to manage go routines
 
 *Start a worker and put objects on a queue*
 ```go
-import github.com/crosseyed/worker
+import github.com/dexterp/worker
 
-w := worker.New(&worker.Options{
-    Workers: 6
-})
-
-// Create a worker function
-workerFunc := func(data interface{}){
-    num, ok := data.(int)
-    if !ok {
-        fmt.Print("Not an integer type")
-        return
-    }
-
-    fmt.Printf("Worker received value %d\n",  num)
+mu := &sync.Mutex{}
+total := 0
+// Create a worker function.
+workerFunc := func(value int){
+    mu.Lock()
+    total += value
+    mu.Unlock()
 }
 
-// Start pool
-w.Start(workerFunc)
+// Start pool.
+w, err := Start(workerFunc, worker.Options{
+    Workers: 6,
+})
 
-// Put an object in the worker pool
+// Put an object in the worker pool.
 for i := 0; i < 30; i++ {
     w.Put(i)
 }
 
-// Close communication and wait for all workers to complete
+// prints 30
+fmt.Println(total)
+
+// Close communication and wait for all workers to complete.
 w.Close()
 ```
 
 *Start a worker and process in batches*
 ```go
-import github.com/crosseyed/worker
+import github.com/dexterp/worker
 
-// Start 3 workers, each with a batch size of 24
-w := worker.New(&worker.Options{
-    Workers: 3
-    BatchSize: 24
-})
-
-// Create a worker function which processes batches (arrays)
-workerFunc := func(batch []interface{}){
+// Create a worker function which processes batches (slices).
+workerFunc := func(batch []int){
     for _, val := range batch {
-        num, ok := val.(int)
-        if !ok {
-            fmt.Print("Not an integer type")
-            return
-        }
-        fmt.Printf("Worker received value %d\n",  num)
+        // process in batches
     }
 }
 
-// Start pool
-w.Start(workerFunc)
+// Start pool.
+w, err := Start(workerFunc, worker.Options{
+    Workers: 3,
+    BatchSize: 24,
+})
 
-// Put an object in the worker pool
+// Put an object in the worker pool.
 for i := 0; i < 72; i++ {
     w.Put(i)
 }
 
-// Close communication and wait for all workers to complete
+// Close communication and wait for all workers to complete.
 w.Close()
 ```

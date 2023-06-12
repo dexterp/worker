@@ -9,64 +9,53 @@ import (
 )
 
 func TestWorker_Start_1(t *testing.T) {
-	fillcnt := 24
+	fillCount := 24
 	var count int
-	w := New(nil)
-	fn := func(single interface{}) {
-		i, ok := single.(int)
-		if !ok {
-			t.Error("Could not determine original value")
-			return
-		}
-		count += i
+	w := New[int]()
+	fn := func(val int) {
+		count += val
 	}
 	err := w.Start(fn)
 	if err != nil {
 		t.Errorf("%v", err)
 	}
-	for i := 0; i < fillcnt; i++ {
+	for i := 0; i < fillCount; i++ {
 		err := w.Put(1)
 		if err != nil {
 			t.Errorf("Unexpected Put() error: %v", err)
 		}
 	}
 	w.Close()
-	if fillcnt != count {
-		t.Errorf("Counts do not match %d = %d", fillcnt, count)
+	if fillCount != count {
+		t.Errorf("Counts do not match %d = %d", fillCount, count)
 	}
 }
 
 func TestWorker_Start_2(t *testing.T) {
-	w := New(nil)
+	w := New[any]()
 	err := w.Start(func() {})
 	if err == nil {
 		t.Error("Expecting unknown type")
 	}
-
 }
 
 func Test_start(t *testing.T) {
-	w := New(nil)
-	ch := make(chan interface{}, 1)
+	w := New[any]()
+	ch := make(chan struct{}, 1)
 	defer func() {
 		if r := recover(); r == nil {
 			t.Fail()
 		}
 	}()
-	start(w, ch, func() {})
+	start[any](w, ch, func() {})
 }
 
 func TestWorker_Put_1(t *testing.T) {
 	var count int
-	fn := func(single interface{}) {
-		i, ok := single.(int)
-		if !ok {
-			t.Error("Expecting an int got")
-			return
-		}
+	fn := func(i int) {
 		count += i
 	}
-	w := New(nil)
+	w := New[int]()
 	if err := w.Start(fn); err != nil {
 		t.Errorf("Got an error: %v", err)
 	}
@@ -81,15 +70,10 @@ func TestWorker_Put_1(t *testing.T) {
 
 func TestWorker_Put_2(t *testing.T) {
 	var count int
-	fn := func(single interface{}) {
-		i, ok := single.(int)
-		if !ok {
-			t.Error("Expecting an int got")
-			return
-		}
+	fn := func(i int) {
 		count += i
 	}
-	w := New(nil)
+	w := New[int]()
 	if err := w.Start(fn); err != nil {
 		t.Errorf("Got an error: %v", err)
 	}
@@ -104,18 +88,13 @@ func TestWorker_Put_2(t *testing.T) {
 
 func TestWorker_Put_3(t *testing.T) {
 	var total int
-	fn := func(data []interface{}) {
-		for _, d := range data {
-			if val, ok := d.(int); ok {
-				total += val
-				continue
-			}
-			t.Error("Unknown type")
-			return
+	fn := func(data []int) {
+		for _, val := range data {
+			total += val
 		}
 	}
-	data := []interface{}{20, 20, 20}
-	w := New(nil)
+	data := []int{20, 20, 20}
+	w := New[int]()
 	if err := w.Start(fn); err != nil {
 		t.Errorf("Got an error: %v", err)
 	}
@@ -132,7 +111,7 @@ func TestWorker_Func_1(t *testing.T) {
 	randnum := rand.Intn(max-min) + min
 	var c int
 	mu := &sync.Mutex{}
-	fn := Func(func(single interface{}) {
+	fn := Func[any](func(single interface{}) {
 		mu.Lock()
 		defer mu.Unlock()
 		if _, ok := single.(int); !ok {
@@ -140,7 +119,7 @@ func TestWorker_Func_1(t *testing.T) {
 		}
 		c++
 	})
-	w := New(&Options{
+	w := New[any](Options{
 		Workers:   3,
 		BatchSize: 5,
 		ChanSize:  256,
@@ -174,7 +153,7 @@ func TestWorker_Func_2(t *testing.T) {
 		}
 		c++
 	}
-	w := New(&Options{
+	w := New[any](Options{
 		Workers:   3,
 		BatchSize: 5,
 		ChanSize:  256,
@@ -194,8 +173,9 @@ func TestWorker_Func_2(t *testing.T) {
 		t.Fatalf("Result %d does not match random number %d", c, randnum)
 	}
 }
+
 func TestWorker_FuncContext_1(t *testing.T) {
-	fn := FuncContext(func(ctx context.Context, v interface{}) {
+	fn := FuncContext[any](func(ctx context.Context, v interface{}) {
 		tout, ok := v.(int)
 		if !ok {
 			panic("expected an integer")
@@ -211,7 +191,7 @@ func TestWorker_FuncContext_1(t *testing.T) {
 		}
 
 	})
-	w := New(&Options{
+	w := New[any](Options{
 		Workers:   3,
 		BatchSize: 5,
 		ChanSize:  256,
@@ -219,6 +199,7 @@ func TestWorker_FuncContext_1(t *testing.T) {
 	err := w.Start(fn)
 	if err != nil {
 		t.Error(err)
+		t.FailNow()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	w.PutC(ctx, 30)
@@ -244,7 +225,7 @@ func TestWorker_FuncContext_2(t *testing.T) {
 		}
 
 	}
-	w := New(&Options{
+	w := New[any](Options{
 		Workers:   3,
 		BatchSize: 5,
 		ChanSize:  256,
@@ -266,18 +247,14 @@ func TestWorker_FuncBatch_1(t *testing.T) {
 	randnum := rand.Intn(max-min) + min
 	var c int
 	mu := &sync.Mutex{}
-	fn := FuncBatch(func(batch []interface{}) {
-		for _, iface := range batch {
-			if val, ok := iface.(int); ok {
-				mu.Lock()
-				c += val
-				mu.Unlock()
-			} else {
-				t.Error("Could not determine original value")
-			}
+	fn := FuncBatch[int](func(batch []int) {
+		for _, val := range batch {
+			mu.Lock()
+			c += val
+			mu.Unlock()
 		}
 	})
-	w := New(&Options{
+	w := New[int](Options{
 		Workers:   5,
 		BatchSize: 3,
 		ChanSize:  25,
@@ -285,10 +262,12 @@ func TestWorker_FuncBatch_1(t *testing.T) {
 	err := w.Start(fn)
 	if err != nil {
 		t.Error(err)
+		t.FailNow()
 	}
 	for i := 1; i <= randnum; i++ {
 		if err := w.Put(1); err != nil {
 			t.Error(err)
+			t.FailNow()
 		}
 	}
 	w.Close()
@@ -314,7 +293,7 @@ func TestWorker_FuncBatch_2(t *testing.T) {
 			}
 		}
 	}
-	w := New(&Options{
+	w := New[any](Options{
 		Workers:   3,
 		BatchSize: 5,
 		ChanSize:  256,
@@ -335,7 +314,7 @@ func TestWorker_FuncBatch_2(t *testing.T) {
 }
 
 func TestWorker_FuncBatchContext_1(t *testing.T) {
-	fn := FuncBatchContext(func(ctx context.Context, batch []interface{}) {
+	fn := FuncBatchContext[any](func(ctx context.Context, batch []interface{}) {
 		for {
 			select {
 			case <-ctx.Done():
@@ -346,7 +325,7 @@ func TestWorker_FuncBatchContext_1(t *testing.T) {
 			}
 		}
 	})
-	w := New(&Options{
+	w := New[any](Options{
 		Workers:   3,
 		BatchSize: 1,
 		ChanSize:  256,
@@ -377,7 +356,7 @@ func TestWorker_FuncBatchContext_2(t *testing.T) {
 			}
 		}
 	}
-	w := New(&Options{
+	w := New[any](Options{
 		Workers:   3,
 		BatchSize: 1,
 		ChanSize:  256,
@@ -413,7 +392,7 @@ func TestWorker_Close(t *testing.T) {
 		}
 	}
 	batchsz := uint(randnum * 2)
-	w := New(&Options{
+	w := New[any](Options{
 		Workers:   1,
 		BatchSize: batchsz,
 		ChanSize:  256,
@@ -454,7 +433,7 @@ func TestWorker_Flush_1(t *testing.T) {
 		}
 	}
 	batchsz := uint(randnum * 2)
-	w := New(&Options{
+	w := New[any](Options{
 		Workers:   1,
 		BatchSize: batchsz,
 		ChanSize:  256,
@@ -503,7 +482,7 @@ func TestWorker_Flush_2(t *testing.T) {
 		c += i
 	}
 	batchsz := uint(randnum * 2)
-	w := New(&Options{
+	w := New[any](Options{
 		Workers:   1,
 		BatchSize: batchsz,
 		ChanSize:  256,
@@ -548,7 +527,7 @@ func TestWorker_Halt(t *testing.T) {
 			}
 		}
 	}
-	w := New(&Options{
+	w := New[any](Options{
 		Workers:   1,
 		BatchSize: uint(batchsz),
 		ChanSize:  256,
@@ -571,5 +550,39 @@ func TestWorker_Halt(t *testing.T) {
 	w.Halt()
 	if c != fillsize {
 		t.Errorf("fill size does not equal batch size: %d = %d", c, fillsize)
+	}
+}
+
+func TestStart_1(t *testing.T) {
+	fillCount := 24
+	var count int
+	fn := func(val int) {
+		count += val
+	}
+	w, err := Start[int](fn)
+	if err != nil {
+		t.Errorf("%v", err)
+		t.FailNow()
+	}
+	for i := 0; i < fillCount; i++ {
+		err := w.Put(1)
+		if err != nil {
+			t.Errorf("Unexpected Put() error: %v", err)
+		}
+	}
+	w.Close()
+	if fillCount != count {
+		t.Errorf("Counts do not match %d = %d", fillCount, count)
+	}
+}
+
+func TestStart_2(t *testing.T) {
+	w, err := Start[any](func() {})
+	if err == nil {
+		t.Error("Expecting unknown type")
+		t.FailNow()
+	}
+	if w != nil {
+		t.Error("Worker object is not nil")
 	}
 }

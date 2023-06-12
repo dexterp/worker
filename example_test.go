@@ -6,7 +6,7 @@ func ExampleNew() {
 	maxcount := 30
 	var totalcount int
 
-	w := New(&Options{
+	w := New[any](Options{
 		Workers: 6,
 	})
 

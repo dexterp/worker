@@ -6,7 +6,7 @@ import (
 )
 
 func TestError_Error(t *testing.T) {
-	e := &Error{worker: "test"}
+	e := &Error{msg: "test"}
 	if !strings.HasPrefix(e.Error(), "worker: ") {
 		t.Fail()
 	}

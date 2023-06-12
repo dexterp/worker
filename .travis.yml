@@ -1,7 +1,0 @@
-language: go
-
-script: make depsdev test
-
-go:
-- 1.13
-- master

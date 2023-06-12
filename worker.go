@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 var (
@@ -11,26 +12,26 @@ var (
 )
 
 // Func is a type accepted by Start()
-type Func func(interface{})
+type Func[T any] func(T)
 
 // FuncBatch is a type accepted by Start()
-type FuncBatch func([]interface{})
+type FuncBatch[T any] func([]T)
 
-// FuncContext is a contextulized function accepted by Start()
-type FuncContext func(context.Context, interface{})
+// FuncContext is a contextualized function accepted by Start()
+type FuncContext[T any] func(context.Context, T)
 
-// FuncBatchContext is a contextulized function accepted by Start()
-type FuncBatchContext func(context.Context, []interface{})
+// FuncBatchContext is a contextualized function accepted by Start()
+type FuncBatchContext[T any] func(context.Context, []T)
 
 // Queue exposes queue interfaces
-type Queue interface {
-	Put(interface{}) error
+type Queue[T any] interface {
+	Put(T) error
 	Flush()
 }
 
 // Manager exposes interfaces to manage worker lifecycle
-type Manager interface {
-	Start(interface{}) error
+type Manager[T any] interface {
+	Start(T) error
 	Close()
 	Halt()
 }
@@ -41,8 +42,8 @@ type Sync interface {
 }
 
 // Payload with a context
-type Payload struct {
-	Data    interface{}
+type Payload[T any] struct {
+	Data    T
 	Context context.Context
 }
 
@@ -50,38 +51,42 @@ type Payload struct {
 type Options struct {
 	// Number of Go routines
 	Workers uint
-	// Length of array to pass to WorkerBatchFunc
+	// Length of slice to pass to WorkerBatchFunc
 	BatchSize uint
-	// Channel length
+	// Channel size
 	ChanSize int
 }
 
 // Worker manages worker pools. It provides a framework to start go routine pools, push objects unto a queue,
 // wait for channels to drain, wait for routines to exit and flush any objects that have been batched.
-type Worker struct {
-	Manager
-	Queue
+type Worker[T any] struct {
+	Manager[T]
+	Queue[T]
 	Sync
-	putMu     *sync.Mutex        // Synchronize Put, Flush & Close routines
-	flushMu   *sync.Mutex        // Ensures the Flush call is thread safe
-	flushWG   *sync.WaitGroup    // WaitGroup to determine when all routines have flushed all jobs that have been queued
-	wrkrWG    *sync.WaitGroup    // WaitGroup to notify when all workers have exited upon channel close
-	chanWG    *sync.WaitGroup    // WaitGroup to notify when channel has drained
-	startOnce *sync.Once         // Start routine once
-	closeOnce *sync.Once         // Close channel once
-	closed    bool               // Channel is closed if true
-	halt      bool               // Force the program not to process any more items
-	batchSize uint               // Size of batch to buffer before sending to WorkerBatchFunc or WorkerFunc
-	wrks      uint               // Number of concurrent routines to run
-	ch        chan Payload       // Communication channel. The array length is controlled by batchSize
-	chFlush   []chan interface{} // One channel per go routine to notify each routine to flush its batch objects
+	putMu      *sync.Mutex     // Synchronize Put, Flush & Close routines.
+	flushMu    *sync.Mutex     // Ensures the Flush call can only run one at a time.
+	flushWG    *sync.WaitGroup // WaitGroup to determine when all routines have flushed all queued jobs.
+	wrkrWG     *sync.WaitGroup // WaitGroup to notify when all workers have exited upon channel close.
+	chanWG     *sync.WaitGroup // WaitGroup to notify when channel has drained.
+	startOnce  *sync.Once      // Start routine once.
+	closeOnce  *sync.Once      // Close channel once.
+	haltAtomic *atomic.Bool    // Force the program not to process any more items.
+	closed     bool            // Channel is closed when true.
+	batchSize  uint            // Size of batch to buffer before sending to WorkerBatchFunc or WorkerFunc.
+	wrks       uint            // Number of concurrent routines to run.
+	ch         chan Payload[T] // Communication channel. The slice length is controlled by batchSize.
+	chFlush    []chan struct{} // One channel per go routine to notify each routine to flush its batch objects.
 }
 
 // New starts a *Worker object.
 //
 // See worker.Options for a list of options.
 // Defaults: Workers = 1, ChanSize = 1
-func New(o *Options) *Worker {
+func New[T any](option ...Options) *Worker[T] {
+	var o *Options
+	if len(option) > 0 {
+		o = &option[0]
+	}
 	var (
 		batchsize uint
 		workers   uint
@@ -98,66 +103,67 @@ func New(o *Options) *Worker {
 	if workers < 1 {
 		workers = 1
 	}
-	w := &Worker{
-		putMu:     &sync.Mutex{},
-		flushMu:   &sync.Mutex{},
-		flushWG:   &sync.WaitGroup{},
-		wrkrWG:    &sync.WaitGroup{},
-		chanWG:    &sync.WaitGroup{},
-		startOnce: &sync.Once{},
-		closeOnce: &sync.Once{},
-		batchSize: batchsize,
-		wrks:      workers,
-		ch:        make(chan Payload, chanlen),
-		chFlush:   []chan interface{}{},
+	w := &Worker[T]{
+		putMu:      &sync.Mutex{},
+		flushMu:    &sync.Mutex{},
+		flushWG:    &sync.WaitGroup{},
+		wrkrWG:     &sync.WaitGroup{},
+		chanWG:     &sync.WaitGroup{},
+		startOnce:  &sync.Once{},
+		closeOnce:  &sync.Once{},
+		haltAtomic: &atomic.Bool{},
+		batchSize:  batchsize,
+		wrks:       workers,
+		ch:         make(chan Payload[T], chanlen),
+		chFlush:    []chan struct{}{},
 	}
 	return w
 }
 
-// castFuncContext checks that fn is type Func or FuncContext otherwise return an error.
-func castFuncContext(fn interface{}) (FuncContext, error) {
+// castFuncContext verifies the function signature of "fn" matches the Func or FuncContext signature.
+func castFuncContext[T any](fn interface{}) (FuncContext[T], error) {
 	switch f := fn.(type) {
-	case Func:
-		return func(_ context.Context, item interface{}) {
+	case Func[T]:
+		return func(_ context.Context, item T) {
 			f(item)
 		}, nil
-	case func(interface{}):
-		return func(_ context.Context, item interface{}) {
+	case FuncContext[T]:
+		return f, nil
+	case func(T):
+		return func(_ context.Context, item T) {
 			f(item)
 		}, nil
-	case FuncContext:
-		return f, nil
-	case func(context.Context, interface{}):
+	case func(context.Context, T):
 		return f, nil
 	}
-	return nil, &Error{worker: "Unknown type"}
+	return nil, &Error{msg: "unknown function type"}
 }
 
-// castFuncBatchContext checks that fn is type FuncBatch or FuncBatchContext
-func castFuncBatchContext(fn interface{}) (FuncBatchContext, error) {
+// castFuncBatchContext verifies the function signature of "fn" matches the FuncBatch or FuncBatchContext signature.
+func castFuncBatchContext[T any](fn interface{}) (FuncBatchContext[T], error) {
 	switch f := fn.(type) {
-	case FuncBatch:
-		return func(_ context.Context, buf []interface{}) {
+	case FuncBatch[T]:
+		return func(_ context.Context, buf []T) {
 			f(buf)
 		}, nil
-	case func([]interface{}):
-		return func(_ context.Context, buf []interface{}) {
-			f(buf)
-		}, nil
-	case FuncBatchContext:
+	case FuncBatchContext[T]:
 		return f, nil
-	case func(context.Context, []interface{}):
+	case func([]T):
+		return func(_ context.Context, buf []T) {
+			f(buf)
+		}, nil
+	case func(context.Context, []T):
 		return f, nil
 	}
-	return nil, &Error{worker: "Unknown type"}
+	return nil, &Error{msg: "unknown function type"}
 }
 
-// Start starts the worker pool.
-// Functions must follow the same signature as WorkerFunc or WorkerBatchFunc as the callback.
-func (w *Worker) Start(fn interface{}) error {
+// Start starts the worker pool. The function signature must match the signature
+// of WorkerFunc or WorkerBatchFunc.
+func (w *Worker[T]) Start(fn interface{}) error {
 	var f interface{}
-	f1, err := castFuncContext(fn)
-	f2, err := castFuncBatchContext(fn)
+	f1, err := castFuncContext[T](fn)
+	f2, err := castFuncBatchContext[T](fn)
 	switch {
 	case f1 != nil:
 		f = f1
@@ -168,34 +174,35 @@ func (w *Worker) Start(fn interface{}) error {
 	}
 
 	for i := uint(0); i < w.wrks; i++ {
-		flush := make(chan interface{}, 2)
+		flush := make(chan struct{}, 2)
 		w.chFlush = append(w.chFlush, flush)
+		w.wrkrWG.Add(1)
 		go start(w, flush, f)
 	}
 	return nil
 }
 
-func start(w *Worker, flush <-chan interface{}, action interface{}) {
+// start initiates a worker or a batch worker.
+func start[T any](w *Worker[T], flush <-chan struct{}, action interface{}) {
 	switch f := action.(type) {
-	case FuncContext:
-		startFuncContext(w, flush, f)
-	case FuncBatchContext:
-		startFuncBatchContext(w, flush, f)
+	case FuncContext[T]:
+		startFuncContext[T](w, flush, f)
+	case FuncBatchContext[T]:
+		startFuncBatchContext[T](w, flush, f)
 	default:
-		panic("Unknown Function Type: Should be FuncContext or FuncBatchContext")
+		panic("unknown function type: should be FuncContext or FuncBatchContext")
 	}
 }
 
-// startFuncContext starts a worker pool
-func startFuncContext(w *Worker, flush <-chan interface{}, action FuncContext) {
-	w.wrkrWG.Add(1)
+// startFuncContext initiates a worker.
+func startFuncContext[T any](w *Worker[T], flush <-chan struct{}, action FuncContext[T]) {
 	defer w.wrkrWG.Done()
-	batch := map[context.Context][]interface{}{}
+	batch := map[context.Context][]T{}
 	for {
 		select {
 		case input, ok := <-w.ch:
 			switch {
-			case w.halt:
+			case w.haltAtomic.Load():
 			case !ok:
 				// On channel close
 				for ctx, queued := range batch {
@@ -211,7 +218,7 @@ func startFuncContext(w *Worker, flush <-chan interface{}, action FuncContext) {
 				// Process in batches
 				data := input.Data
 				if _, ok := batch[input.Context]; !ok {
-					batch[input.Context] = []interface{}{}
+					batch[input.Context] = []T{}
 				}
 				batch[input.Context] = append(batch[input.Context], data)
 				if uint(len(batch[input.Context])) >= w.batchSize {
@@ -231,7 +238,7 @@ func startFuncContext(w *Worker, flush <-chan interface{}, action FuncContext) {
 					for _, item := range queued {
 						action(ctx, item)
 					}
-					batch[ctx] = []interface{}{}
+					batch[ctx] = []T{}
 				}
 			}
 			w.flushWG.Done()
@@ -240,16 +247,15 @@ func startFuncContext(w *Worker, flush <-chan interface{}, action FuncContext) {
 	}
 }
 
-// startFuncBatchContext starts a worker pool
-func startFuncBatchContext(w *Worker, flush <-chan interface{}, action FuncBatchContext) {
-	w.wrkrWG.Add(1)
+// startFuncBatchContext initiates a batch worker.
+func startFuncBatchContext[T any](w *Worker[T], flush <-chan struct{}, action FuncBatchContext[T]) {
 	defer w.wrkrWG.Done()
-	batch := map[context.Context][]interface{}{}
+	batch := map[context.Context][]T{}
 	for {
 		select {
 		case input, ok := <-w.ch:
 			switch {
-			case w.halt:
+			case w.haltAtomic.Load():
 			case !ok:
 				// On channel close
 				for ctx, queued := range batch {
@@ -264,25 +270,25 @@ func startFuncBatchContext(w *Worker, flush <-chan interface{}, action FuncBatch
 				ctx := input.Context
 				data := input.Data
 				if _, ok := batch[ctx]; !ok {
-					batch[ctx] = []interface{}{}
+					batch[ctx] = []T{}
 				}
 				batch[ctx] = append(batch[ctx], data)
 				if uint(len(batch[ctx])) >= w.batchSize {
 					action(ctx, batch[ctx])
-					batch[ctx] = []interface{}{}
+					batch[ctx] = []T{}
 				}
 			default:
 				// Process individually
 				ctx := input.Context
 				data := input.Data
-				action(ctx, []interface{}{data})
+				action(ctx, []T{data})
 			}
 			w.chanWG.Done()
 		case <-flush:
 			for ctx, queued := range batch {
 				if len(queued) > 0 {
 					action(ctx, queued)
-					batch[ctx] = []interface{}{}
+					batch[ctx] = []T{}
 				}
 			}
 			w.flushWG.Done()
@@ -291,22 +297,22 @@ func startFuncBatchContext(w *Worker, flush <-chan interface{}, action FuncBatch
 	}
 }
 
-// Put adds a job unto the queue
-func (w *Worker) Put(input interface{}) error {
+// Put adds a new job to the queue.
+func (w *Worker[T]) Put(input T) error {
 	return w.PutC(putCtx, input)
 }
 
-// PutC adds a contextualised job to the queue
-func (w *Worker) PutC(ctx context.Context, input interface{}) error {
+// PutC inserts a contextualised job onto the queue.
+func (w *Worker[T]) PutC(ctx context.Context, input T) error {
 	w.putMu.Lock()
 	defer w.putMu.Unlock()
 	if w.closed {
-		return &Error{worker: "input queue is closed"}
+		return &Error{msg: "the channel has been closed"}
 	}
-	if w.halt {
-		return &Error{worker: "process has been killed"}
+	if w.haltAtomic.Load() {
+		return &Error{msg: "worker pool has been halted"}
 	}
-	payload := Payload{
+	payload := Payload[T]{
 		Context: ctx,
 		Data:    input,
 	}
@@ -315,8 +321,8 @@ func (w *Worker) PutC(ctx context.Context, input interface{}) error {
 	return nil
 }
 
-// Flush informs wrks to flush any batches that have been queued. Blocks until all routines have flushed.
-func (w *Worker) Flush() {
+// Flush notifies workers to flush any queued batches. Blocks until all Goroutines have finished flushing.
+func (w *Worker[T]) Flush() {
 	w.flushMu.Lock()
 	w.putMu.Lock()
 	defer func() {
@@ -326,13 +332,13 @@ func (w *Worker) Flush() {
 	w.chanWG.Wait()
 	w.flushWG.Add(len(w.chFlush))
 	for _, ch := range w.chFlush {
-		ch <- nil
+		ch <- struct{}{}
 	}
 	w.flushWG.Wait()
 }
 
-// Close closes the input queue and blocks until the queue is completely processed
-func (w *Worker) Close() {
+// Close closes the input queue and waits for the items in the queue to be processed.
+func (w *Worker[T]) Close() {
 	w.closeOnce.Do(func() {
 		w.putMu.Lock()
 		defer w.putMu.Unlock()
@@ -342,16 +348,29 @@ func (w *Worker) Close() {
 	})
 }
 
-// Halt will force all routines to stop without processing the queued or batched jobs
-func (w *Worker) Halt() {
+// Halt force all routines to stop without processing any queued or batched jobs.
+func (w *Worker[T]) Halt() {
 	w.putMu.Lock()
 	defer w.putMu.Unlock()
-	w.halt = true
+	w.haltAtomic.Store(true)
 }
 
-// Wait waits for all go routines to shutdown. Shutdown is triggered by calling Close
-func (w *Worker) Wait() {
+// Wait waiting for all go routines to exit. The shutdown is initiated by
+// calling the Close function.
+func (w *Worker[T]) Wait() {
 	w.flushWG.Wait()
 	w.chanWG.Wait()
 	w.wrkrWG.Wait()
+}
+
+// Start start a worker pool with function fn. Verifies the function signature
+// of fn matches the Func, FuncContext, FuncBatch or FuncBatchContext
+// signature.
+func Start[T any](fn any, options ...Options) (*Worker[T], error) {
+	w := New[T](options...)
+	err := w.Start(fn)
+	if err != nil {
+		return nil, err
+	}
+	return w, nil
 }
