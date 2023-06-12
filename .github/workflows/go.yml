@@ -23,4 +23,8 @@ jobs:
     
     - name: Run tests
       run: make test
-
+    
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with: 
+        files: reports/coverage.out

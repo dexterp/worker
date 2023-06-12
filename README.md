@@ -1,4 +1,4 @@
-[![Github Actions](https://github.com/dexterp/worker/actions/workflows/go.yml/badge.svg)](https://github.com/dexterp/worker/actions) [![Go Report Card](https://goreportcard.com/badge/dexterp/worker)](https://goreportcard.com/report/dexterp/worker)  [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/dexterp/worker/blob/master/LICENSE)
+[![Github Actions](https://github.com/dexterp/worker/actions/workflows/go.yml/badge.svg)](https://github.com/dexterp/worker/actions) [![codecov](https://codecov.io/gh/dexterp/worker/branch/master/graph/badge.svg)](https://codecov.io/gh/dexterp/worker) [![Go Report Card](https://goreportcard.com/badge/dexterp/worker)](https://goreportcard.com/report/dexterp/worker)  [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/dexterp/worker/blob/master/LICENSE)
 
 # Simple worker pool
 
