@@ -8,7 +8,7 @@ ISRELEASED := $(shell git show-ref v$(VERSION) 2>&1 > /dev/null && echo "true")
 # Utilities
 # Default environment variables.
 # Any variables already set will override the values in this file(s).
-DOTENV := godotenv -f $(HOME)/.env,.env
+DOTENV := $(shell $(test -f $(HOME)/.env && echo "godotenv -f $(HOME)/.env,.env" || echo "godotenv -f .env"))
 
 # Go
 GOFILES := $(shell find . -name '*.go' 2> /dev/null | grep -v vendor)
