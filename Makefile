@@ -29,7 +29,7 @@ release: _isreleased
 	@$(DOTENV) make _release
 
 tools:
-	@$(MAKE) $(GOPATH)/bin/go-junit-report $(GOPATH)/bin/golangci-lint $(GOPATH)/bin/golangci-lint $(GOPATH)/bin/go-test-html $(GOPATH)/bin/gocyclo $(GOPATH)/bin/godotenv $(GOPATH)/bin/versionbump
+	@$(MAKE) $(GOPATH)/bin/go-junit-report $(GOPATH)/bin/golangci-lint $(GOPATH)/bin/go-test-html $(GOPATH)/bin/gocyclo $(GOPATH)/bin/godotenv $(GOPATH)/bin/versionbump
 
 forcetools:
 	@$(MAKE) --always-make tools
