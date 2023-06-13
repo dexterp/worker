@@ -18,6 +18,14 @@ jobs:
       with:
         go-version: '1.20.5'
     
+    - name: Setup Go bin cache
+      uses: actions/cache@v3
+      with:
+        path: ~/go/bin
+        key: ${{ runner.os }}-golang-${{ hashFiles('**/Makefile') }}
+        restore-keys: |
+         ${{ runner.os }}-golang-
+    
     - name: Install tools
       run: make tools
     

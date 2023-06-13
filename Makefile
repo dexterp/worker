@@ -14,41 +14,49 @@ DOTENV := $(shell $(test -f $(HOME)/.env && echo "godotenv -f $(HOME)/.env,.env"
 GOPATH := $(shell go env GOPATH)
 GOFILES := $(shell find . -name '*.go' 2> /dev/null | grep -v vendor)
 
-.PHONY: browse bumpmajor bumpminor bumppatch cattest clean tools _isreleased release _release test _test _test_setup
-
 #
 # End user targets
 #
+.PHONY: clean
 clean:
 	rm -rf .cache $(BINARY) dist reports tmp vendor
 
+.PHONY: test
 test:
 	@$(DOTENV) make _test
 
+.PHONY: release
 release: _isreleased
 	@$(DOTENV) make _release
 
+.PHONY: tools
 tools:
 	@$(MAKE) $(GOPATH)/bin/go-junit-report $(GOPATH)/bin/golangci-lint $(GOPATH)/bin/go-test-html $(GOPATH)/bin/gocyclo $(GOPATH)/bin/godotenv $(GOPATH)/bin/versionbump
 
+.PHONY: forcetools
 forcetools:
 	@$(MAKE) --always-make tools
 
+.PHONY: bumpmajor
 bumpmajor:
 	git fetch --tags
 	versionbump --checktags major Makefile
 
+.PHONY: bumpminor
 bumpminor:
 	git fetch --tags
 	versionbump --checktags minor Makefile
 
+.PHONY: bumppatch
 bumppatch:
 	git fetch --tags
 	versionbump --checktags patch Makefile
 
+.PHONY: browse
 browse:
 	@make $(REPORTS)
 
+.PHONY: cattest
 cattest:
 	### Unit Tests
 	@cat reports/test.txt
@@ -60,6 +68,7 @@ cattest:
 #
 # Helper targets
 #
+.PHONY: _test
 _test: _test_setup
 	### Unit Tests
 	@(go test -race -timeout 5s -covermode atomic -coverprofile=./reports/coverage.out -v ./...; echo $$? > reports/exitcode.txt) 2>&1 | tee reports/test.txt
@@ -71,10 +80,12 @@ _test: _test_setup
 	@gocyclo -avg $(GOFILES) | grep -v _test.go | tee reports/cyclocomplexity.txt
 	@exit $$(cat reports/exitcode.txt)
 
+.PHONY: _test_setup
 _test_setup:
 	@mkdir -p tmp
 	@mkdir -p reports/html
 
+.PHONY: _release
 _release:
 	@echo "### Releasing $(VERSION)"
 	git tag v$(VERSION)
@@ -88,6 +99,7 @@ $(REPORTS):
 	which xdg-open && xdg-open $@
 
 # Check versionbump
+.PHONY: _isreleased
 _isreleased:
 ifeq ($(ISRELEASED),true)
 	@echo "Version $(VERSION) has been released."
