@@ -197,7 +197,8 @@ func start[T any](w *Worker[T], flush <-chan struct{}, action interface{}) {
 // startFuncContext initiates a worker.
 func startFuncContext[T any](w *Worker[T], flush <-chan struct{}, action FuncContext[T]) {
 	defer w.wrkrWG.Done()
-	batch := map[context.Context][]T{}
+	batch := []*Payload[T]{}
+	var total uint
 	for {
 		select {
 		case input, ok := <-w.ch:
@@ -205,27 +206,20 @@ func startFuncContext[T any](w *Worker[T], flush <-chan struct{}, action FuncCon
 			case w.haltAtomic.Load():
 			case !ok:
 				// On channel close
-				for ctx, queued := range batch {
-					if len(queued) > 0 {
-						for _, item := range queued {
-							action(ctx, item)
-						}
-						delete(batch, ctx)
-					}
+				for _, item := range batch {
+					action(item.Context, item.Data)
 				}
 				return
 			case w.batchSize > 1:
 				// Process in batches
-				data := input.Data
-				if _, ok := batch[input.Context]; !ok {
-					batch[input.Context] = []T{}
-				}
-				batch[input.Context] = append(batch[input.Context], data)
-				if uint(len(batch[input.Context])) >= w.batchSize {
-					for _, item := range batch[input.Context] {
-						action(input.Context, item)
+				batch = append(batch, &input)
+				total++
+				if total >= w.batchSize {
+					for _, item := range batch {
+						action(item.Context, item.Data)
 					}
-					delete(batch, input.Context)
+					total = 0
+					batch = nil
 				}
 			default:
 				// Process individually
@@ -233,14 +227,11 @@ func startFuncContext[T any](w *Worker[T], flush <-chan struct{}, action FuncCon
 			}
 			w.chanWG.Done()
 		case <-flush:
-			for ctx, queued := range batch {
-				if len(queued) > 0 {
-					for _, item := range queued {
-						action(ctx, item)
-					}
-					batch[ctx] = []T{}
-				}
+			for _, item := range batch {
+				action(item.Context, item.Data)
 			}
+			total = 0
+			batch = nil
 			w.flushWG.Done()
 			w.flushWG.Wait()
 		}
@@ -251,6 +242,7 @@ func startFuncContext[T any](w *Worker[T], flush <-chan struct{}, action FuncCon
 func startFuncBatchContext[T any](w *Worker[T], flush <-chan struct{}, action FuncBatchContext[T]) {
 	defer w.wrkrWG.Done()
 	batch := map[context.Context][]T{}
+	var total uint
 	for {
 		select {
 		case input, ok := <-w.ch:
@@ -259,10 +251,7 @@ func startFuncBatchContext[T any](w *Worker[T], flush <-chan struct{}, action Fu
 			case !ok:
 				// On channel close
 				for ctx, queued := range batch {
-					if len(queued) > 0 {
-						action(ctx, queued)
-						delete(batch, ctx)
-					}
+					action(ctx, queued)
 				}
 				return
 			case w.batchSize > 1:
@@ -273,9 +262,13 @@ func startFuncBatchContext[T any](w *Worker[T], flush <-chan struct{}, action Fu
 					batch[ctx] = []T{}
 				}
 				batch[ctx] = append(batch[ctx], data)
-				if uint(len(batch[ctx])) >= w.batchSize {
-					action(ctx, batch[ctx])
-					batch[ctx] = []T{}
+				total++
+				if total >= w.batchSize {
+					for ctx, elms := range batch {
+						action(ctx, elms)
+					}
+					total = 0
+					batch = map[context.Context][]T{}
 				}
 			default:
 				// Process individually
@@ -286,11 +279,10 @@ func startFuncBatchContext[T any](w *Worker[T], flush <-chan struct{}, action Fu
 			w.chanWG.Done()
 		case <-flush:
 			for ctx, queued := range batch {
-				if len(queued) > 0 {
-					action(ctx, queued)
-					batch[ctx] = []T{}
-				}
+				action(ctx, queued)
 			}
+			total = 0
+			batch = map[context.Context][]T{}
 			w.flushWG.Done()
 			w.flushWG.Wait()
 		}

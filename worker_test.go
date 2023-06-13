@@ -380,19 +380,15 @@ func TestWorker_Close(t *testing.T) {
 	randnum := rand.Intn(max-min) + min
 	var c int
 	mu := &sync.Mutex{}
-	fn := func(batch []interface{}) {
-		for _, iface := range batch {
-			if val, ok := iface.(int); ok {
-				mu.Lock()
-				c += val
-				mu.Unlock()
-			} else {
-				t.Error("Could not determine original value")
-			}
+	fn := func(batch []int) {
+		for _, val := range batch {
+			mu.Lock()
+			c += val
+			mu.Unlock()
 		}
 	}
 	batchsz := uint(randnum * 2)
-	w := New[any](Options{
+	w := New[int](Options{
 		Workers:   1,
 		BatchSize: batchsz,
 		ChanSize:  256,
